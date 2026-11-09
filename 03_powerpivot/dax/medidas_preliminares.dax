@@ -1,0 +1,72 @@
+// =============================================================
+// DoubleDates_03_PowerPivot.xlsx -- medidas preliminares (Etapa 3)
+// Tabela-base de todas as medidas: fVendas
+// Separador: ponto e vírgula (Excel pt-BR). Em vírgula no Power BI.
+// =============================================================
+
+// Quanto vendemos? (antes de descontos) -- Moeda, 2 casas
+Faturamento Bruto := SUMX ( fVendas; fVendas[quantity] * fVendas[product_price] )
+
+// Quanto entrou? (líquido de descontos) -- Moeda, 2 casas
+Faturamento := SUMX ( fVendas; fVendas[quantity] * fVendas[product_price] - fVendas[Valor_Desconto] )
+
+// Quanto custaram os produtos vendidos? (receita menos lucro) -- Moeda, 2 casas
+Custo Total := SUMX ( fVendas; fVendas[revenue] - fVendas[profit] )
+
+// Qual a margem sobre o faturamento? (faturamento menos custo, dividido pelo faturamento) -- Porcentagem, 1 casa
+Margem Bruta := DIVIDE ( [Faturamento] - [Custo Total]; [Faturamento] )
+
+// Quantas unidades foram vendidas? -- Inteiro
+Qtd Itens := SUM ( fVendas[quantity] )
+
+// Quantos pedidos foram feitos? (conta cada pedido uma vez) -- Inteiro
+Qtd Cupons := DISTINCTCOUNT ( fVendas[order_id] )
+
+// Quanto cada pedido rende em média? -- Moeda, 2 casas
+Ticket Médio := DIVIDE ( [Faturamento]; [Qtd Cupons] )
+
+// Quantos itens cada pedido tem em média? -- Número, 2 casas
+Itens por Cupom := DIVIDE ( [Qtd Itens]; [Qtd Cupons] )
+
+// Quanto veio de anúncios pagos? -- Moeda, 2 casas
+Faturamento Engajado := CALCULATE ( [Faturamento]; fVendas[traffic_source] = "Paid Ads" )
+
+// Qual a fatia do faturamento que vem de anúncios pagos? -- Porcentagem, 1 casa
+%Engajado := DIVIDE ( [Faturamento Engajado]; [Faturamento] )
+
+// O faturamento cresceu ou caiu em relação ao mês anterior? -- Porcentagem, 1 casa
+Cresc. MoM % :=
+VAR Atual = [Faturamento]
+VAR Anterior =
+    CALCULATE ( [Faturamento]; DATEADD ( dCalendario[Data]; -1; MONTH ) )
+RETURN
+    IF ( NOT ISBLANK ( Atual ); DIVIDE ( Atual - Anterior; Anterior ) )
+
+// ---------------- Medidas de conferência ----------------
+
+// Quantas linhas o modelo tem em fVendas? (deve bater com a Etapa 2) -- Inteiro
+Conf Linhas fVendas := COUNTROWS ( fVendas )
+
+// Quantas linhas foram descartadas na Etapa 2? -- Inteiro
+Conf Linhas Rejeitados := COUNTROWS ( Rejeitados )
+
+// Aceitas + rejeitadas = linhas lidas na origem (deve bater com a Etapa 2) -- Inteiro
+Conf Linhas Lidas := [Conf Linhas fVendas] + [Conf Linhas Rejeitados]
+
+// Quantas vendas têm categoria inexistente na dimensão? (esperado: 0) -- Inteiro
+Conf Vendas sem Produto := COUNTROWS ( FILTER ( fVendas; ISBLANK ( RELATED ( lst_Categorias[lst_Categoria] ) ) ) ) + 0
+
+// Quantas vendas têm país inexistente na dimensão? (esperado: 0) -- Inteiro
+Conf Vendas sem Filial := COUNTROWS ( FILTER ( fVendas; ISBLANK ( RELATED ( dPaises[Cod_padrao] ) ) ) ) + 0
+
+// Quantas vendas têm data fora do calendário? (esperado: 0) -- Inteiro
+Conf Vendas sem Data := COUNTROWS ( FILTER ( fVendas; ISBLANK ( RELATED ( dCalendario[Mes] ) ) ) ) + 0
+
+// Há chaves primárias repetidas nas dimensões? (esperado: 0) -- Inteiro
+Conf PK Duplicada :=
+( COUNTROWS ( lst_Categorias ) - DISTINCTCOUNT ( lst_Categorias[lst_Categoria] ) )
++ ( COUNTROWS ( dPaises ) - DISTINCTCOUNT ( dPaises[Cod_padrao] ) )
++ ( COUNTROWS ( dCalendario ) - DISTINCTCOUNT ( dCalendario[Data] ) )
+
+// O modelo reproduz o valor líquido da Etapa 2? (esperado: 0) -- Moeda, 2 casas
+Conf Dif Faturamento := ROUND ( SUM ( fVendas[discounted_price] ) - [Faturamento]; 2 )
